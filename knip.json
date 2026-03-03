@@ -1,0 +1,14 @@
+{
+    "entry": [
+        "resources/js/app.jsx",
+        "resources/js/Pages/**/*.jsx"
+    ],
+    "project": [
+        "resources/js/**/*.{js,jsx}"
+    ],
+    "paths": {
+        "@/*": [
+            "resources/js/*"
+        ]
+    }
+}
