@@ -4,6 +4,8 @@ use App\Http\Controllers\ChatSessionController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\TopicController;
 use App\Http\Controllers\TrashController;
+use App\Http\Controllers\WidgetController;
+use App\Http\Controllers\WidgetNoteController;
 use App\Http\Controllers\WorkspaceController;
 use App\Models\ChatSession;
 use Illuminate\Http\Request;
@@ -39,7 +41,7 @@ Route::get('/', function (Request $request) {
     ]);
 });
 
-Route::middleware('auth')->group(function () {
+Route::middleware(['auth', 'verified.phone'])->group(function () {
     Route::get('/workspaces', [WorkspaceController::class, 'index']);
     Route::get('/workspaces/{workspace}/chat/{chatSession}', [ChatSessionController::class, 'show']);
 
@@ -58,6 +60,13 @@ Route::middleware('auth')->group(function () {
 
     Route::post('/api/chat/{chatSession}/message', [MessageController::class, 'store']);
 
+    Route::post('/api/widgets', [WidgetController::class, 'store']);
+    Route::put('/api/widgets/{widget}', [WidgetController::class, 'update']);
+    Route::delete('/api/widgets/{widget}', [WidgetController::class, 'destroy']);
+    Route::post('/api/widgets/reorder', [WidgetController::class, 'reorder']);
+    Route::post('/api/widgets/resize', [WidgetController::class, 'resize']);
+    Route::put('/api/widget-notes/{widget}', [WidgetNoteController::class, 'update']);
+
     Route::get('/trash', [TrashController::class, 'index']);
     Route::post('/api/trash/topics/{id}/restore', [TrashController::class, 'restoreTopic']);
     Route::delete('/api/trash/topics/{id}/force', [TrashController::class, 'forceDeleteTopic']);
@@ -65,6 +74,8 @@ Route::middleware('auth')->group(function () {
     Route::delete('/api/trash/workspaces/{id}/force', [TrashController::class, 'forceDeleteWorkspace']);
     Route::post('/api/trash/chats/{id}/restore', [TrashController::class, 'restoreChat']);
     Route::delete('/api/trash/chats/{id}/force', [TrashController::class, 'forceDeleteChat']);
+    Route::post('/api/trash/widgets/{id}/restore', [TrashController::class, 'restoreWidget']);
+    Route::delete('/api/trash/widgets/{id}/force', [TrashController::class, 'forceDeleteWidget']);
 
 });
 

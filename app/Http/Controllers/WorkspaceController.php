@@ -17,9 +17,15 @@ class WorkspaceController extends Controller
         $topics = $user->topics()->orderBy('name')->get();
 
         $workspaces = $user->workspaces()
-            ->with(['topic', 'chatSessions' => function ($query) {
-                $query->orderBy('updated_at', 'desc')->limit(20);
-            }])
+            ->with([
+                'topic',
+                'chatSessions' => function ($query) {
+                    $query->orderBy('updated_at', 'desc')->limit(20);
+                },
+                'widgets' => function ($query) {
+                    $query->with(['note', 'chatSession'])->orderBy('sort_order');
+                },
+            ])
             ->orderBy('updated_at', 'desc')
             ->get()
             ->map(function ($workspace) {
@@ -33,6 +39,28 @@ class WorkspaceController extends Controller
                             'id' => $chat->id,
                             'title' => $chat->title,
                             'updated_at' => $chat->updated_at->toISOString(),
+                        ];
+                    })->toArray(),
+                    'widgets' => $workspace->widgets->map(function ($widget) {
+                        return [
+                            'id' => $widget->id,
+                            'type' => $widget->type,
+                            'title' => $widget->title,
+                            'size_preset' => $widget->size_preset,
+                            'grid_x' => $widget->grid_x,
+                            'grid_y' => $widget->grid_y,
+                            'grid_w' => $widget->grid_w,
+                            'grid_h' => $widget->grid_h,
+                            'sort_order' => $widget->sort_order,
+                            'chat_session_id' => $widget->chat_session_id,
+                            'chat' => $widget->chatSession ? [
+                                'id' => $widget->chatSession->id,
+                                'updated_at' => $widget->chatSession->updated_at?->toISOString(),
+                            ] : null,
+                            'note' => $widget->note ? [
+                                'id' => $widget->note->id,
+                                'content' => $widget->note->content,
+                            ] : null,
                         ];
                     })->toArray(),
                 ];
@@ -71,6 +99,7 @@ class WorkspaceController extends Controller
             'topic' => $workspace->topic->name,
             'topic_id' => $workspace->topic_id,
             'chats' => [],
+            'widgets' => [],
         ], 201);
     }
 

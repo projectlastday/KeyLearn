@@ -3,6 +3,7 @@
 use App\Models\ChatSession;
 use App\Models\Topic;
 use App\Models\User;
+use App\Models\Widget;
 use App\Models\Workspace;
 
 test('deleting a topic soft deletes its workspaces and chats', function () {
@@ -49,9 +50,23 @@ test('deleting a workspace soft deletes its chats', function () {
         'title' => 'Session 2',
     ]);
 
+    $widget = Widget::create([
+        'workspace_id' => $workspace->id,
+        'created_by' => $user->id,
+        'type' => 'note',
+        'title' => 'Catatan',
+        'size_preset' => 'M',
+        'grid_x' => 1,
+        'grid_y' => 1,
+        'grid_w' => 6,
+        'grid_h' => 2,
+        'sort_order' => 1,
+    ]);
+
     $response = $this->actingAs($user)->delete("/api/workspaces/{$workspace->id}");
 
     $response->assertNoContent();
     $this->assertSoftDeleted('workspaces', ['id' => $workspace->id]);
     $this->assertSoftDeleted('chat_sessions', ['id' => $chat->id]);
+    $this->assertSoftDeleted('widgets', ['id' => $widget->id]);
 });

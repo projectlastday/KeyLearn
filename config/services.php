@@ -41,4 +41,9 @@ return [
         'redirect' => env('GOOGLE_REDIRECT_URI', '/auth/google/callback'),
     ],
 
+    'fonnte' => [
+        'token' => env('FONNTE_API_TOKEN'),
+        'endpoint' => env('FONNTE_ENDPOINT', 'https://api.fonnte.com/send'),
+    ],
+
 ];

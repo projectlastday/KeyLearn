@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ChatSession;
+use App\Models\Widget;
 use App\Models\Workspace;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -50,10 +51,24 @@ class TrashController extends Controller
                 'deleted_at' => $c->deleted_at->toISOString(),
             ]);
 
+        $widgets = Widget::onlyTrashed()
+            ->whereHas('workspace', fn ($q) => $q->withTrashed()->where('user_id', $user->id))
+            ->with(['workspace' => fn ($q) => $q->withTrashed()])
+            ->orderBy('deleted_at', 'desc')
+            ->get()
+            ->map(fn ($w) => [
+                'id' => $w->id,
+                'title' => $w->title,
+                'workspace' => $w->workspace?->title ?? '-',
+                'type' => 'widget',
+                'deleted_at' => $w->deleted_at->toISOString(),
+            ]);
+
         return Inertia::render('Trash/Index', [
             'trashedTopics' => $topics->toArray(),
             'trashedWorkspaces' => $workspaces->toArray(),
             'trashedChats' => $chats->toArray(),
+            'trashedWidgets' => $widgets->toArray(),
         ]);
     }
 
@@ -119,6 +134,38 @@ class TrashController extends Controller
         abort_unless($workspace && $workspace->user_id === $request->user()->id, 403);
 
         $chat->forceDelete();
+
+        return response()->json(null, 204);
+    }
+
+    public function restoreWidget(Request $request, int $id): JsonResponse
+    {
+        $widget = Widget::onlyTrashed()->with('chatSession')->findOrFail($id);
+        $workspace = Workspace::withTrashed()->find($widget->workspace_id);
+        abort_unless($workspace && $workspace->user_id === $request->user()->id, 403);
+
+        if ($workspace->trashed()) {
+            $workspace->restore();
+            if ($workspace->topic && $workspace->topic->trashed()) {
+                $workspace->topic->restore();
+            }
+        }
+
+        $widget->restore();
+        if ($widget->type === 'chat' && $widget->chatSession && $widget->chatSession->trashed()) {
+            $widget->chatSession->restore();
+        }
+
+        return response()->json(['message' => 'Widget berhasil dipulihkan.']);
+    }
+
+    public function forceDeleteWidget(Request $request, int $id): JsonResponse
+    {
+        $widget = Widget::onlyTrashed()->with('chatSession')->findOrFail($id);
+        $workspace = Workspace::withTrashed()->find($widget->workspace_id);
+        abort_unless($workspace && $workspace->user_id === $request->user()->id, 403);
+
+        $widget->forceDelete();
 
         return response()->json(null, 204);
     }

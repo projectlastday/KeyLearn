@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class ChatSession extends Model
@@ -25,5 +26,10 @@ class ChatSession extends Model
     public function messages(): HasMany
     {
         return $this->hasMany(Message::class);
+    }
+
+    public function widget(): HasOne
+    {
+        return $this->hasOne(Widget::class)->withTrashed();
     }
 }

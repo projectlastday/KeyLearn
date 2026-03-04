@@ -9,12 +9,14 @@ const tabs = [
     { key: 'topics', label: 'Topik' },
     { key: 'workspaces', label: 'Folder' },
     { key: 'chats', label: 'Obrolan' },
+    { key: 'widgets', label: 'Widget' },
 ];
 
-export default function Index({ trashedTopics = [], trashedWorkspaces = [], trashedChats = [] }) {
+export default function Index({ trashedTopics = [], trashedWorkspaces = [], trashedChats = [], trashedWidgets = [] }) {
     const [topics, setTopics] = useState(trashedTopics);
     const [workspaces, setWorkspaces] = useState(trashedWorkspaces);
     const [chats, setChats] = useState(trashedChats);
+    const [widgets, setWidgets] = useState(trashedWidgets);
     const [activeTab, setActiveTab] = useState('topics');
     const [loading, setLoading] = useState({});
     const [confirmDelete, setConfirmDelete] = useState(null);
@@ -37,6 +39,7 @@ export default function Index({ trashedTopics = [], trashedWorkspaces = [], tras
             if (type === 'topics') setTopics(prev => prev.filter(i => i.id !== id));
             if (type === 'workspaces') setWorkspaces(prev => prev.filter(i => i.id !== id));
             if (type === 'chats') setChats(prev => prev.filter(i => i.id !== id));
+            if (type === 'widgets') setWidgets(prev => prev.filter(i => i.id !== id));
         } catch {
         } finally {
             setLoading(prev => ({ ...prev, [key]: false }));
@@ -51,6 +54,7 @@ export default function Index({ trashedTopics = [], trashedWorkspaces = [], tras
             if (type === 'topics') setTopics(prev => prev.filter(i => i.id !== id));
             if (type === 'workspaces') setWorkspaces(prev => prev.filter(i => i.id !== id));
             if (type === 'chats') setChats(prev => prev.filter(i => i.id !== id));
+            if (type === 'widgets') setWidgets(prev => prev.filter(i => i.id !== id));
         } catch {
         } finally {
             setLoading(prev => ({ ...prev, [key]: false }));
@@ -58,8 +62,20 @@ export default function Index({ trashedTopics = [], trashedWorkspaces = [], tras
         }
     };
 
-    const currentItems = activeTab === 'topics' ? topics : activeTab === 'workspaces' ? workspaces : chats;
-    const apiType = activeTab === 'topics' ? 'topics' : activeTab === 'workspaces' ? 'workspaces' : 'chats';
+    const currentItems = activeTab === 'topics'
+        ? topics
+        : activeTab === 'workspaces'
+            ? workspaces
+            : activeTab === 'chats'
+                ? chats
+                : widgets;
+    const apiType = activeTab === 'topics'
+        ? 'topics'
+        : activeTab === 'workspaces'
+            ? 'workspaces'
+            : activeTab === 'chats'
+                ? 'chats'
+                : 'widgets';
 
     const headerContent = (
         <Breadcrumbs
@@ -78,13 +94,19 @@ export default function Index({ trashedTopics = [], trashedWorkspaces = [], tras
                 <div className="mb-8">
                     <h2 className="text-2xl font-semibold text-[#5a3e22] mb-1">Tong Sampah</h2>
                     <p className="text-[#8c7a66] text-sm">
-                        Chat yang dihapus akan tersimpan di sini. Anda bisa memulihkan atau menghapus secara permanen.
+                        Item yang dihapus akan tersimpan di sini. Anda bisa memulihkan atau menghapus secara permanen.
                     </p>
                 </div>
 
                 <div className="flex items-center gap-2 mb-6 border-b border-[#e6ddd0]">
                     {tabs.map(tab => {
-                        const count = tab.key === 'topics' ? topics.length : tab.key === 'workspaces' ? workspaces.length : chats.length;
+                        const count = tab.key === 'topics'
+                            ? topics.length
+                            : tab.key === 'workspaces'
+                                ? workspaces.length
+                                : tab.key === 'chats'
+                                    ? chats.length
+                                    : widgets.length;
                         return (
                             <button
                                 key={tab.key}
@@ -117,6 +139,7 @@ export default function Index({ trashedTopics = [], trashedWorkspaces = [], tras
                             {activeTab === 'topics' && 'Tidak ada topik yang dihapus.'}
                             {activeTab === 'workspaces' && 'Tidak ada folder yang dihapus.'}
                             {activeTab === 'chats' && 'Tidak ada obrolan yang dihapus.'}
+                            {activeTab === 'widgets' && 'Tidak ada widget yang dihapus.'}
                         </p>
                     </div>
                 ) : (

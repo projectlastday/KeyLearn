@@ -3,9 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\ChatSession;
+use App\Models\Widget;
 use App\Models\Workspace;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -54,10 +56,29 @@ class ChatSessionController extends Controller
     {
         abort_unless($workspace->user_id === $request->user()->id, 403);
 
-        $chatSession = $workspace->chatSessions()->create([
-            'title' => 'Obrolan Baru',
-            'selected_ai_model' => 'gemini-2.5-flash',
-        ]);
+        $title = 'Obrolan Baru';
+        $nextSort = (int) $workspace->widgets()->max('sort_order') + 1;
+        $chatSession = DB::transaction(function () use ($request, $workspace, $title, $nextSort) {
+            $chat = $workspace->chatSessions()->create([
+                'title' => $title,
+                'selected_ai_model' => 'gemini-2.5-flash',
+            ]);
+
+            $workspace->widgets()->create([
+                'created_by' => $request->user()->id,
+                'chat_session_id' => $chat->id,
+                'type' => 'chat',
+                'title' => $title,
+                'size_preset' => 'M',
+                'grid_x' => 1,
+                'grid_y' => $nextSort,
+                'grid_w' => 6,
+                'grid_h' => 2,
+                'sort_order' => $nextSort,
+            ]);
+
+            return $chat;
+        });
 
         return response()->json([
             'id' => $chatSession->id,
@@ -76,6 +97,11 @@ class ChatSessionController extends Controller
         ]);
 
         $chatSession->update($validated);
+        if ($chatSession->widget) {
+            $chatSession->widget->update([
+                'title' => $validated['title'],
+            ]);
+        }
 
         return response()->json($chatSession);
     }
@@ -85,7 +111,10 @@ class ChatSessionController extends Controller
         $workspace = $chatSession->workspace;
         abort_unless($workspace->user_id === $request->user()->id, 403);
 
-        $chatSession->delete();
+        DB::transaction(function () use ($chatSession) {
+            Widget::where('chat_session_id', $chatSession->id)->get()->each->delete();
+            $chatSession->delete();
+        });
 
         return response()->json(null, 204);
     }

@@ -14,9 +14,12 @@ class User extends Authenticatable
     protected $fillable = [
         'name',
         'email',
+        'phone',
         'password',
         'google_id',
         'avatar',
+        'phone_verified_at',
+        'phone_verification_required',
     ];
 
     protected $hidden = [
@@ -28,6 +31,8 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'phone_verified_at' => 'datetime',
+            'phone_verification_required' => 'boolean',
             'password' => 'hashed',
         ];
     }
@@ -40,5 +45,29 @@ class User extends Authenticatable
     public function workspaces(): HasMany
     {
         return $this->hasMany(Workspace::class);
+    }
+
+    public function phoneVerifications(): HasMany
+    {
+        return $this->hasMany(PhoneVerification::class);
+    }
+
+    public function phoneVerificationEvents(): HasMany
+    {
+        return $this->hasMany(PhoneVerificationEvent::class);
+    }
+
+    public function widgets(): HasMany
+    {
+        return $this->hasMany(Widget::class, 'created_by');
+    }
+
+    public function hasVerifiedPhone(): bool
+    {
+        if (! $this->phone_verification_required) {
+            return true;
+        }
+
+        return $this->phone_verified_at !== null;
     }
 }

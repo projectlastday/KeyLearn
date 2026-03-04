@@ -23,10 +23,12 @@ class Workspace extends Model
         static::deleting(function (Workspace $workspace) {
             if ($workspace->isForceDeleting()) {
                 $workspace->chatSessions()->withTrashed()->get()->each->forceDelete();
+                $workspace->widgets()->withTrashed()->get()->each->forceDelete();
                 return;
             }
 
             $workspace->chatSessions()->get()->each->delete();
+            $workspace->widgets()->get()->each->delete();
         });
     }
 
@@ -43,5 +45,10 @@ class Workspace extends Model
     public function chatSessions(): HasMany
     {
         return $this->hasMany(ChatSession::class);
+    }
+
+    public function widgets(): HasMany
+    {
+        return $this->hasMany(Widget::class);
     }
 }

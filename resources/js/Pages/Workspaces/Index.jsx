@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, Fragment, useMemo } from 'react';
-import { Head, Link, usePage, router } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
 import { Dialog, Transition } from '@headlessui/react';
 import AppLayout from '@/Layouts/AppLayout';
 import Breadcrumbs from '@/Components/Breadcrumbs';
@@ -57,15 +57,24 @@ export default function Index({ initialWorkspaces = [], initialTopics = [], init
     const topicDropdownRef = useRef(null);
     const [isAddWorkspaceModalOpen, setIsAddWorkspaceModalOpen] = useState(false);
     const [isAddTopicModalOpen, setIsAddTopicModalOpen] = useState(false);
+    const [widgetModalStep, setWidgetModalStep] = useState(null);
+    const [newWidgetType, setNewWidgetType] = useState('note');
     const [newWorkspaceName, setNewWorkspaceName] = useState('');
     const [workspaceError, setWorkspaceError] = useState('');
     const [workspaceTopicError, setWorkspaceTopicError] = useState('');
     const [newTopicName, setNewTopicName] = useState('');
+    const [newWidgetTitle, setNewWidgetTitle] = useState('Catatan Baru');
+    const [widgetError, setWidgetError] = useState('');
     const [topicError, setTopicError] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedTopic, setSelectedTopic] = useState('Semua');
     const [dropdownSelectedTopic, setDropdownSelectedTopic] = useState('');
     const [isSaving, setIsSaving] = useState(false);
+    const [draggedWidgetId, setDraggedWidgetId] = useState(null);
+    const [dragOverWidgetId, setDragOverWidgetId] = useState(null);
+    const [hasDragChanges, setHasDragChanges] = useState(false);
+    const [isReorderSaving, setIsReorderSaving] = useState(false);
+    const [reorderError, setReorderError] = useState('');
     const isAllTopicSelected = selectedTopic === 'Semua';
     const selectableTopics = useMemo(
         () => allTopics.filter((topic) => topic !== 'Semua'),
@@ -74,6 +83,11 @@ export default function Index({ initialWorkspaces = [], initialTopics = [], init
 
     const [itemToDelete, setItemToDelete] = useState(null);
     const [topicIdMap, setTopicIdMap] = useState(() => ({ ...initialTopicMap }));
+    const noteSaveTimeoutsRef = useRef({});
+    const latestActiveWidgetsRef = useRef([]);
+    const dragOriginWidgetIdRef = useRef(null);
+    const lastDragOverWidgetIdRef = useRef(null);
+    const preDragWidgetsRef = useRef([]);
 
     useEffect(() => {
         const query = url.includes('?') ? url.split('?')[1] : '';
@@ -105,11 +119,33 @@ export default function Index({ initialWorkspaces = [], initialTopics = [], init
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    useEffect(() => {
+        return () => {
+            Object.values(noteSaveTimeoutsRef.current).forEach((timeoutId) => clearTimeout(timeoutId));
+            noteSaveTimeoutsRef.current = {};
+        };
+    }, []);
 
     const [isEditingTitle, setIsEditingTitle] = useState(false);
     const [editContextName, setEditContextName] = useState('');
+    const widgetRowSpanMap = {
+        S: 9,
+        M: 12,
+        L: 16,
+    };
+    const nextWidgetSizeMap = {
+        S: 'M',
+        M: 'L',
+        L: 'S',
+    };
 
     const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
+    const activeWorkspaceWidgets = [...(activeWorkspace?.widgets || [])]
+        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+    useEffect(() => {
+        latestActiveWidgetsRef.current = activeWorkspaceWidgets;
+    }, [activeWorkspaceWidgets]);
+
     const filteredWorkspaces = workspaces.filter(w => {
         const matchesSearch = w.title.toLowerCase().includes(searchQuery.toLowerCase());
         const matchesTopic = selectedTopic === 'Semua' || w.topic === selectedTopic;
@@ -127,6 +163,29 @@ export default function Index({ initialWorkspaces = [], initialTopics = [], init
         return groups;
     }, [isAllTopicSelected, filteredWorkspaces]);
 
+    const buildWorkspaceUrl = (topicName, workspaceId = null) => {
+        const params = new URLSearchParams();
+        if (topicName && topicName !== 'Semua') {
+            params.set('topic', topicName);
+        }
+        if (workspaceId) {
+            params.set('workspace', String(workspaceId));
+        }
+        const query = params.toString();
+        return query ? `/workspaces?${query}` : '/workspaces';
+    };
+
+    const openWorkspaceView = (workspace) => {
+        setActiveWorkspaceId(workspace.id);
+        window.history.pushState({}, '', buildWorkspaceUrl(workspace.topic || selectedTopic, workspace.id));
+    };
+
+    const closeWorkspaceView = () => {
+        const topicForList = activeWorkspace?.topic || selectedTopic;
+        setActiveWorkspaceId(null);
+        window.history.pushState({}, '', buildWorkspaceUrl(topicForList));
+    };
+
     const triggerDelete = (e, type, id, name) => {
         e.preventDefault();
         e.stopPropagation();
@@ -141,7 +200,7 @@ export default function Index({ initialWorkspaces = [], initialTopics = [], init
             if (type === 'workspace') {
                 await axios.delete(`/api/workspaces/${id}`);
                 setWorkspaces(prev => prev.filter(w => w.id !== id));
-                if (activeWorkspaceId === id) setActiveWorkspaceId(null);
+                if (activeWorkspaceId === id) closeWorkspaceView();
             } else if (type === 'topic') {
                 const topicId = topicIdMap[name];
                 if (topicId) {
@@ -154,7 +213,19 @@ export default function Index({ initialWorkspaces = [], initialTopics = [], init
                 await axios.delete(`/api/chat-sessions/${id}`);
                 setWorkspaces(prev => prev.map(w => {
                     if (w.id === activeWorkspaceId) {
-                        return { ...w, chats: w.chats.filter(c => c.id !== id) };
+                        return {
+                            ...w,
+                            chats: (w.chats || []).filter(c => c.id !== id),
+                            widgets: (w.widgets || []).filter(widget => widget.chat_session_id !== id),
+                        };
+                    }
+                    return w;
+                }));
+            } else if (type === 'widget') {
+                await axios.delete(`/api/widgets/${id}`);
+                setWorkspaces(prev => prev.map(w => {
+                    if (w.id === activeWorkspaceId) {
+                        return { ...w, widgets: (w.widgets || []).filter(widget => widget.id !== id) };
                     }
                     return w;
                 }));
@@ -255,15 +326,176 @@ export default function Index({ initialWorkspaces = [], initialTopics = [], init
         }
     };
 
-    const handleCreateChat = async () => {
+    const handleCreateWidget = async (e) => {
+        e.preventDefault();
         if (!activeWorkspace) return;
+
+        const trimmedTitle = newWidgetTitle.trim();
+        if (!trimmedTitle) {
+            setWidgetError('Nama tidak boleh kosong.');
+            return;
+        }
+        if (trimmedTitle.length > 100) {
+            setWidgetError('Nama terlalu panjang (maksimal 100 karakter).');
+            return;
+        }
+
         setIsSaving(true);
+        setWidgetError('');
         try {
-            const response = await axios.post(`/api/workspaces/${activeWorkspace.id}/chat`);
-            router.visit(response.data.redirect_url);
-        } catch {
+            const response = await axios.post('/api/widgets', {
+                workspace_id: activeWorkspace.id,
+                type: newWidgetType,
+                title: trimmedTitle,
+                size_preset: 'M',
+            });
+            setWorkspaces(prev => prev.map(w => {
+                if (w.id === activeWorkspace.id) {
+                    return { ...w, widgets: [...(w.widgets || []), response.data] };
+                }
+                return w;
+            }));
+            setWidgetModalStep(null);
+            setNewWidgetType('note');
+            setNewWidgetTitle('Catatan Baru');
+            setWidgetError('');
+        } catch (error) {
+            const msg = error.response?.data?.message || (newWidgetType === 'chat' ? 'Gagal membuat obrolan.' : 'Gagal membuat widget.');
+            setWidgetError(msg);
+        } finally {
             setIsSaving(false);
         }
+    };
+
+    const handleChooseWidgetType = (type) => {
+        setNewWidgetType(type);
+        setWidgetError('');
+        setNewWidgetTitle(type === 'chat' ? 'Obrolan Baru' : 'Catatan Baru');
+        setWidgetModalStep('detail');
+    };
+
+    const handleCloseWidgetCreation = () => {
+        setWidgetModalStep(null);
+        setWidgetError('');
+    };
+
+    const handleBackToWidgetSelection = () => {
+        setWidgetModalStep('select');
+        setWidgetError('');
+    };
+
+    const handleSaveWidgetTitle = async (widgetId, titleValue) => {
+        const trimmed = titleValue.trim();
+        if (!trimmed) return;
+        try {
+            await axios.put(`/api/widgets/${widgetId}`, { title: trimmed });
+            setWorkspaces(prev => prev.map(w => {
+                if (w.id !== activeWorkspaceId) return w;
+                return {
+                    ...w,
+                    widgets: (w.widgets || []).map(widget => (
+                        widget.id === widgetId ? { ...widget, title: trimmed } : widget
+                    )),
+                };
+            }));
+        } catch {
+        }
+    };
+
+    const handleResizeWidget = async (widgetId, sizePreset) => {
+        try {
+            const response = await axios.post('/api/widgets/resize', {
+                widget_id: widgetId,
+                size_preset: sizePreset,
+            });
+            setWorkspaces(prev => prev.map(w => {
+                if (w.id !== activeWorkspaceId) return w;
+                return {
+                    ...w,
+                    widgets: (w.widgets || []).map(widget => (
+                        widget.id === widgetId ? { ...widget, ...response.data } : widget
+                    )),
+                };
+            }));
+        } catch {
+        }
+    };
+
+    const handleCycleWidgetSize = (widget) => {
+        const currentSize = widget.size_preset || 'M';
+        const nextSize = nextWidgetSizeMap[currentSize] || 'M';
+        handleResizeWidget(widget.id, nextSize);
+    };
+
+    const persistWidgetReorder = async (widgets) => {
+        if (!activeWorkspace) return;
+        await axios.post('/api/widgets/reorder', {
+            workspace_id: activeWorkspace.id,
+            widgets: widgets.map((widget, index) => ({
+                id: widget.id,
+                sort_order: index + 1,
+                grid_x: 1,
+                grid_y: index + 1,
+            })),
+        });
+    };
+
+    const moveWidgetLocally = (targetWidgetId) => {
+        if (!activeWorkspace || !draggedWidgetId || draggedWidgetId === targetWidgetId) return;
+        if (lastDragOverWidgetIdRef.current === targetWidgetId) return;
+
+        const fromIndex = activeWorkspaceWidgets.findIndex((widget) => widget.id === draggedWidgetId);
+        const toIndex = activeWorkspaceWidgets.findIndex((widget) => widget.id === targetWidgetId);
+        if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
+
+        const reordered = [...activeWorkspaceWidgets];
+        const [moved] = reordered.splice(fromIndex, 1);
+        reordered.splice(toIndex, 0, moved);
+        const normalized = reordered.map((widget, index) => ({
+            ...widget,
+            sort_order: index + 1,
+            grid_x: 1,
+            grid_y: index + 1,
+        }));
+
+        setWorkspaces(prev => prev.map((workspace) => (
+            workspace.id === activeWorkspace.id
+                ? { ...workspace, widgets: normalized }
+                : workspace
+        )));
+        setHasDragChanges(true);
+        lastDragOverWidgetIdRef.current = targetWidgetId;
+    };
+
+    const handleNoteContentChange = (widgetId, content) => {
+        setWorkspaces(prev => prev.map(w => {
+            if (w.id !== activeWorkspaceId) return w;
+            return {
+                ...w,
+                widgets: (w.widgets || []).map(widget => (
+                    widget.id === widgetId
+                        ? {
+                            ...widget,
+                            note: {
+                                ...(widget.note || {}),
+                                content,
+                            },
+                        }
+                        : widget
+                )),
+            };
+        }));
+
+        if (noteSaveTimeoutsRef.current[widgetId]) {
+            clearTimeout(noteSaveTimeoutsRef.current[widgetId]);
+        }
+
+        noteSaveTimeoutsRef.current[widgetId] = setTimeout(async () => {
+            try {
+                await axios.put(`/api/widget-notes/${widgetId}`, { content });
+            } catch {
+            }
+        }, 700);
     };
 
     const handleCloseWorkspaceModal = () => {
@@ -304,12 +536,12 @@ export default function Index({ initialWorkspaces = [], initialTopics = [], init
     const headerContent = (
         <Breadcrumbs
             items={activeWorkspaceId ? [
-                { label: 'Ruang Kerja', onClick: () => setActiveWorkspaceId(null) },
+                { label: 'Ruang Kerja', onClick: closeWorkspaceView },
                 activeWorkspace?.topic ? {
                     label: activeWorkspace.topic,
                     onClick: () => {
                         setSelectedTopic(activeWorkspace.topic);
-                        setActiveWorkspaceId(null);
+                        closeWorkspaceView();
                     }
                 } : null,
                 { label: activeWorkspace?.title || 'Memuat...' }
@@ -462,7 +694,7 @@ export default function Index({ initialWorkspaces = [], initialTopics = [], init
                                                 <div key={workspace.id} className="relative group">
                                                     <button
                                                         title={`Folder: ${workspace.title}${workspace.topic ? `\nTopik: ${workspace.topic}` : ''}`}
-                                                        onClick={() => setActiveWorkspaceId(workspace.id)}
+                                                        onClick={() => openWorkspaceView(workspace)}
                                                         className="w-44 h-44 bg-[#fdfbf8] rounded-2xl border-2 border-[#d4b896] flex flex-col items-center justify-center p-5 hover:border-[#b8926a] hover:shadow-md transition-all cursor-pointer shadow-sm focus:outline-none focus:ring-2 focus:ring-[#d4b896]/40"
                                                     >
                                                         <div className="mb-2 opacity-80 group-hover:opacity-100 transition-opacity">
@@ -493,7 +725,7 @@ export default function Index({ initialWorkspaces = [], initialTopics = [], init
                                     <div key={workspace.id} className="relative group">
                                         <button
                                             title={`Folder: ${workspace.title}${workspace.topic ? `\nTopik: ${workspace.topic}` : ''}`}
-                                            onClick={() => setActiveWorkspaceId(workspace.id)}
+                                            onClick={() => openWorkspaceView(workspace)}
                                             className="w-44 h-44 bg-[#fdfbf8] rounded-2xl border-2 border-[#d4b896] flex flex-col items-center justify-center p-5 hover:border-[#b8926a] hover:shadow-md transition-all cursor-pointer shadow-sm focus:outline-none focus:ring-2 focus:ring-[#d4b896]/40"
                                         >
                                             <div className="mb-2 opacity-80 group-hover:opacity-100 transition-opacity">
@@ -532,74 +764,206 @@ export default function Index({ initialWorkspaces = [], initialTopics = [], init
                     </div>
                 ) : (
                     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        <div className="flex items-center gap-4 mb-8">
-                            <button
-                                onClick={() => setActiveWorkspaceId(null)}
-                                className="p-2 -ml-2 text-[#8c7a66] hover:text-[#5a3e22] hover:bg-[#e8ddd0] rounded-lg transition-colors focus:outline-none"
-                            >
-                                {icons.back}
-                            </button>
+                        <div className="flex items-start justify-between gap-4 mb-8 flex-wrap">
+                            <div className="flex items-center gap-4">
+                                <button
+                                    onClick={closeWorkspaceView}
+                                    className="p-2 -ml-2 text-[#8c7a66] hover:text-[#5a3e22] hover:bg-[#e8ddd0] rounded-lg transition-colors focus:outline-none"
+                                >
+                                    {icons.back}
+                                </button>
 
-                            {isEditingTitle ? (
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        autoFocus
-                                        type="text"
-                                        value={editContextName}
-                                        onChange={(e) => setEditContextName(e.target.value)}
-                                        onBlur={handleSaveTitle}
-                                        onKeyDown={(e) => e.key === 'Enter' && handleSaveTitle()}
-                                        className="bg-white border border-gray-200 rounded-xl px-4 py-2 font-semibold text-2xl text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-300 w-80"
-                                    />
-                                </div>
-                            ) : (
-                                <div className="flex items-center gap-3 group">
-                                    <h2 className="text-2xl font-semibold text-[#5a3e22] select-none" onDoubleClick={handleStartEditTitle}>
-                                        {activeWorkspace.title}
-                                    </h2>
-                                    <button
-                                        onClick={handleStartEditTitle}
-                                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-gray-400 hover:text-amber-600 rounded-lg hover:bg-amber-50 focus:outline-none"
-                                    >
-                                        {icons.edit}
-                                    </button>
-                                </div>
-                            )}
+                                {isEditingTitle ? (
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            autoFocus
+                                            type="text"
+                                            value={editContextName}
+                                            onChange={(e) => setEditContextName(e.target.value)}
+                                            onBlur={handleSaveTitle}
+                                            onKeyDown={(e) => e.key === 'Enter' && handleSaveTitle()}
+                                            className="bg-white border border-gray-200 rounded-xl px-4 py-2 font-semibold text-2xl text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-300 w-80"
+                                        />
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-3 group">
+                                        <h2 className="text-2xl font-semibold text-[#5a3e22] select-none" onDoubleClick={handleStartEditTitle}>
+                                            {activeWorkspace.title}
+                                        </h2>
+                                        <button
+                                            onClick={handleStartEditTitle}
+                                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-gray-400 hover:text-amber-600 rounded-lg hover:bg-amber-50 focus:outline-none"
+                                        >
+                                            {icons.edit}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+
+                            <button
+                                onClick={() => {
+                                    setWidgetError('');
+                                    setWidgetModalStep('select');
+                                }}
+                                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-[#a67c52] text-white hover:bg-[#8b6640] transition-colors focus:outline-none shadow-sm"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className="w-4 h-4">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                </svg>
+                                Tambah Widget
+                            </button>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            <button
-                                onClick={handleCreateChat}
-                                disabled={isSaving}
-                                className="h-28 bg-[#fdfbf8]/60 rounded-2xl border border-dashed border-[#c9b89e] flex items-center justify-center text-[#a08b73] hover:bg-[#fdfbf8] hover:border-[#a67c52] hover:text-[#6b4c2a] transition-all gap-2 text-sm font-medium focus:outline-none disabled:opacity-50"
-                            >
-                                {icons.plus} Obrolan Baru
-                            </button>
-
-                            {activeWorkspace.chats.map((chat) => (
-                                <Link
-                                    key={chat.id}
-                                    href={`/workspaces/${activeWorkspace.id}/chat/${chat.id}`}
-                                    className="group/chat relative h-28 bg-[#fdfbf8] rounded-2xl border border-[#e0d3c3] p-5 hover:border-[#c4a882] hover:shadow-sm transition-all cursor-pointer flex flex-col justify-between"
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3 auto-rows-[8px] grid-flow-row-dense">
+                            {reorderError && (
+                                <div className="col-span-full rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                                    {reorderError}
+                                </div>
+                            )}
+                            {activeWorkspaceWidgets.map((widget) => (
+                                <div
+                                    key={widget.id}
+                                    draggable
+                                    onDragStart={(event) => {
+                                        if (dragOriginWidgetIdRef.current !== widget.id) {
+                                            event.preventDefault();
+                                            return;
+                                        }
+                                        preDragWidgetsRef.current = [...activeWorkspaceWidgets];
+                                        setReorderError('');
+                                        setDraggedWidgetId(widget.id);
+                                        setHasDragChanges(false);
+                                        event.dataTransfer.setData('text/plain', String(widget.id));
+                                        event.dataTransfer.effectAllowed = 'move';
+                                    }}
+                                    onDragOver={(event) => {
+                                        event.preventDefault();
+                                        event.dataTransfer.dropEffect = 'move';
+                                        if (draggedWidgetId && draggedWidgetId !== widget.id) {
+                                            setDragOverWidgetId(widget.id);
+                                            moveWidgetLocally(widget.id);
+                                        }
+                                    }}
+                                    onDragLeave={() => {
+                                        if (dragOverWidgetId === widget.id) {
+                                            setDragOverWidgetId(null);
+                                        }
+                                    }}
+                                    onDrop={(event) => {
+                                        event.preventDefault();
+                                        setDragOverWidgetId(null);
+                                    }}
+                                    onDragEnd={async () => {
+                                        if (hasDragChanges && !isReorderSaving) {
+                                            setIsReorderSaving(true);
+                                            try {
+                                                await persistWidgetReorder(latestActiveWidgetsRef.current);
+                                            } catch {
+                                                if (activeWorkspace) {
+                                                    const rollbackWidgets = preDragWidgetsRef.current;
+                                                    setWorkspaces(prev => prev.map((workspace) => (
+                                                        workspace.id === activeWorkspace.id
+                                                            ? { ...workspace, widgets: rollbackWidgets }
+                                                            : workspace
+                                                    )));
+                                                }
+                                                setReorderError('Urutan widget gagal disimpan. Tata letak dikembalikan.');
+                                            } finally {
+                                                setIsReorderSaving(false);
+                                            }
+                                        }
+                                        setDraggedWidgetId(null);
+                                        setDragOverWidgetId(null);
+                                        setHasDragChanges(false);
+                                        dragOriginWidgetIdRef.current = null;
+                                        lastDragOverWidgetIdRef.current = null;
+                                    }}
+                                    style={{ gridRowEnd: `span ${widgetRowSpanMap[widget.size_preset] || widgetRowSpanMap.M}` }}
+                                    className={`relative h-full bg-[#fdfbf8] rounded-2xl border p-4 flex flex-col ${dragOverWidgetId === widget.id ? 'border-[#c4a882] ring-2 ring-[#c4a882]/40' : 'border-[#e0d3c3]'}`}
                                 >
-                                    <h4 className="font-medium text-[#5a3e22]">
-                                        {chat.title}
-                                    </h4>
-                                    <div className="flex items-center justify-between text-[#b8a28a] text-xs">
-                                        <span>{chat.updated_at ? new Date(chat.updated_at).toLocaleDateString('id-ID') : 'Hari ini'}</span>
-                                        {icons.message}
-                                    </div>
-                                    <button
-                                        onClick={(e) => triggerDelete(e, 'chat', chat.id, chat.title)}
-                                        className="absolute top-2 right-2 p-1.5 rounded-lg bg-white/80 text-gray-400 opacity-0 group-hover/chat:opacity-100 hover:bg-red-50 hover:text-red-500 transition-all focus:outline-none shadow-sm"
-                                        title="Hapus obrolan"
+                                    <div
+                                        className={`flex items-center gap-2 mb-3 rounded-lg ${draggedWidgetId === widget.id ? 'cursor-grabbing' : 'cursor-grab'}`}
+                                        onPointerDown={(event) => {
+                                            if (event.target.closest('[data-no-drag="true"]')) {
+                                                dragOriginWidgetIdRef.current = null;
+                                                return;
+                                            }
+                                            dragOriginWidgetIdRef.current = widget.id;
+                                        }}
                                     >
-                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                        </svg>
-                                    </button>
-                                </Link>
+                                        <input
+                                            data-no-drag="true"
+                                            type="text"
+                                            defaultValue={widget.title}
+                                            onBlur={(e) => handleSaveWidgetTitle(widget.id, e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    e.currentTarget.blur();
+                                                }
+                                            }}
+                                            className="flex-1 min-w-0 bg-transparent text-sm font-semibold text-[#5a3e22] border border-transparent hover:border-[#e0d3c3] focus:border-[#c4a882] rounded-lg px-2 py-1 focus:outline-none"
+                                        />
+                                        <button
+                                            data-no-drag="true"
+                                            type="button"
+                                            onClick={() => handleCycleWidgetSize(widget)}
+                                            className="min-w-9 px-2 py-1 text-xs font-semibold rounded-lg border border-[#d8c8b5] bg-white text-[#6b5a47] hover:bg-[#faf7f2] focus:outline-none focus:ring-2 focus:ring-[#c4a882]"
+                                            title={`Ubah ukuran (sekarang ${widget.size_preset || 'M'})`}
+                                        >
+                                            {widget.size_preset || 'M'}
+                                        </button>
+                                        <button
+                                            data-no-drag="true"
+                                            onClick={(e) => triggerDelete(e, 'widget', widget.id, widget.title)}
+                                            className="p-1.5 rounded-lg bg-white/80 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-all focus:outline-none"
+                                            title="Hapus widget"
+                                        >
+                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                            </svg>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="p-1.5 rounded-lg border border-[#d8c8b5] bg-white text-[#8c7a66] hover:bg-[#faf7f2] cursor-grab active:cursor-grabbing"
+                                            title="Geser widget"
+                                        >
+                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6h.01M10 12h.01M10 18h.01M14 6h.01M14 12h.01M14 18h.01" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    {widget.type === 'note' ? (
+                                        <textarea
+                                            value={widget.note?.content || ''}
+                                            onChange={(e) => handleNoteContentChange(widget.id, e.target.value)}
+                                            className="w-full flex-1 min-h-0 resize-none rounded-xl border border-[#e8ddd0] bg-white px-3 py-2 text-sm text-[#5a3e22] placeholder-[#b8a28a] focus:outline-none focus:ring-2 focus:ring-[#c4a882]"
+                                            placeholder="Tulis catatan Anda..."
+                                        />
+                                    ) : (
+                                        <button
+                                            data-no-drag="true"
+                                            type="button"
+                                            onClick={() => window.location.href = `/workspaces/${activeWorkspace.id}/chat/${widget.chat?.id || widget.chat_session_id}`}
+                                            className="w-full flex-1 min-h-0 rounded-xl border border-[#d9c2a8] bg-gradient-to-br from-[#fffaf4] to-[#f8efe5] px-4 py-3 text-left hover:border-[#c4a882] transition-colors flex flex-col justify-between"
+                                        >
+                                            <div className="h-full rounded-xl bg-white/75 border border-[#eadbc9] flex items-center justify-center">
+                                                <div className="relative">
+                                                    <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#fff] border border-[#e1cfbc] text-[#b18762]">
+                                                        {icons.message}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </button>
+                                    )}
+                                </div>
                             ))}
+
+                            {activeWorkspaceWidgets.length === 0 && (
+                                <div className="col-span-full rounded-2xl border border-dashed border-[#d8c8b5] px-6 py-10 text-center text-sm text-[#8c7a66]">
+                                    Belum ada widget. Klik "Tambah Widget" untuk mulai.
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
@@ -790,6 +1154,130 @@ export default function Index({ initialWorkspaces = [], initialTopics = [], init
                                             </button>
                                         </div>
                                     </form>
+                                </Dialog.Panel>
+                            </Transition.Child>
+                        </div>
+                    </div>
+                </Dialog>
+            </Transition>
+            <Transition appear show={widgetModalStep !== null} as={Fragment}>
+                <Dialog as="div" className="relative z-50" onClose={widgetModalStep === 'detail' ? handleBackToWidgetSelection : handleCloseWidgetCreation}>
+                    <Transition.Child
+                        as={Fragment}
+                        enter="ease-out duration-300"
+                        enterFrom="opacity-0"
+                        enterTo="opacity-100"
+                        leave="ease-in duration-200"
+                        leaveFrom="opacity-100"
+                        leaveTo="opacity-0"
+                    >
+                        <div className="fixed inset-0 bg-gray-800/30 backdrop-blur-sm" />
+                    </Transition.Child>
+
+                    <div className="fixed inset-0 overflow-y-auto">
+                        <div className="flex min-h-full items-center justify-center p-4 text-center">
+                            <Transition.Child
+                                as={Fragment}
+                                enter="ease-out duration-300"
+                                enterFrom="opacity-0 scale-95"
+                                enterTo="opacity-100 scale-100"
+                                leave="ease-in duration-200"
+                                leaveFrom="opacity-100 scale-100"
+                                leaveTo="opacity-0 scale-95"
+                            >
+                                <Dialog.Panel className="w-full max-w-sm transform overflow-hidden bg-white rounded-2xl p-7 text-left align-middle shadow-lg transition-all border border-gray-200">
+                                    {widgetModalStep === 'select' ? (
+                                        <>
+                                            <Dialog.Title as="h3" className="text-lg font-semibold leading-6 text-[#5a3e22] mb-1">
+                                                Tambah Widget
+                                            </Dialog.Title>
+                                            <div className="mb-6">
+                                                <p className="text-sm text-[#8c7a66]">
+                                                    Pilih jenis widget yang ingin ditambahkan ke papan.
+                                                </p>
+                                            </div>
+                                            <div className="space-y-4">
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleChooseWidgetType('note')}
+                                                        className="rounded-xl border border-[#e0d3c3] bg-[#fdfbf8] hover:bg-[#faf7f2] px-4 py-3 text-left transition-colors"
+                                                    >
+                                                        <p className="text-sm font-semibold text-[#5a3e22]">Catatan</p>
+                                                        <p className="text-xs text-[#8c7a66] mt-1">Tulis ringkasan dan ide penting.</p>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleChooseWidgetType('chat')}
+                                                        className="rounded-xl border border-[#e0d3c3] bg-[#fdfbf8] hover:bg-[#faf7f2] px-4 py-3 text-left transition-colors"
+                                                    >
+                                                        <p className="text-sm font-semibold text-[#5a3e22]">Obrolan</p>
+                                                        <p className="text-xs text-[#8c7a66] mt-1">Buat sesi chatbot baru.</p>
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <div className="mt-8 flex justify-end gap-3">
+                                                <button
+                                                    type="button"
+                                                    onClick={handleCloseWidgetCreation}
+                                                    className="px-5 py-2.5 rounded-xl text-sm font-medium text-gray-500 hover:bg-gray-100 transition-colors focus:outline-none"
+                                                >
+                                                    Batal
+                                                </button>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Dialog.Title as="h3" className="text-lg font-semibold leading-6 text-[#5a3e22] mb-1">
+                                                {newWidgetType === 'chat' ? 'Buat Obrolan' : 'Buat Catatan'}
+                                            </Dialog.Title>
+                                            <div className="mb-6">
+                                                <p className="text-sm text-[#8c7a66]">
+                                                    Masukkan nama untuk {newWidgetType === 'chat' ? 'obrolan' : 'widget'} baru.
+                                                </p>
+                                            </div>
+                                            <form onSubmit={handleCreateWidget}>
+                                                <div className="space-y-4">
+                                                    <div>
+                                                        <input
+                                                            type="text"
+                                                            value={newWidgetTitle}
+                                                            onChange={(e) => {
+                                                                setNewWidgetTitle(e.target.value);
+                                                                if (widgetError) setWidgetError('');
+                                                            }}
+                                                            placeholder={newWidgetType === 'chat' ? 'Nama obrolan...' : 'Nama widget...'}
+                                                            className={`w-full bg-[#faf7f2] border ${widgetError ? 'border-red-400 focus:ring-red-400 focus:border-red-400' : 'border-[#ddd0c0] focus:ring-[#c4a882] focus:border-[#c4a882]'} rounded-xl px-4 py-3 text-[#4a3728] focus:outline-none focus:ring-2 transition-all`}
+                                                            autoFocus
+                                                        />
+                                                    </div>
+                                                    {widgetError && (
+                                                        <p className="text-sm text-red-500 font-medium">
+                                                            {widgetError}
+                                                        </p>
+                                                    )}
+                                                </div>
+
+                                                <div className="mt-8 flex justify-end gap-3">
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleBackToWidgetSelection}
+                                                        className="px-5 py-2.5 rounded-xl text-sm font-medium text-gray-500 hover:bg-gray-100 transition-colors focus:outline-none"
+                                                    >
+                                                        Batal
+                                                    </button>
+                                                    <button
+                                                        type="submit"
+                                                        disabled={!newWidgetTitle.trim() || isSaving}
+                                                        className="px-6 py-2.5 rounded-xl text-sm font-medium bg-[#a67c52] text-white hover:bg-[#8b6640] disabled:opacity-40 transition-colors focus:outline-none"
+                                                    >
+                                                        {isSaving ? 'Menyimpan...' : (newWidgetType === 'chat' ? 'Buat Obrolan' : 'Buat Widget')}
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </>
+                                    )}
                                 </Dialog.Panel>
                             </Transition.Child>
                         </div>

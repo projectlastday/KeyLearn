@@ -33,6 +33,12 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
+        $user = $request->user();
+        if ($user && ! $user->hasVerifiedPhone()) {
+            return redirect()->route('phone.verify.notice')
+                ->with('status', 'Nomor WhatsApp belum terverifikasi. Masukkan OTP untuk melanjutkan.');
+        }
+
         return redirect()->intended('/workspaces');
     }
 
