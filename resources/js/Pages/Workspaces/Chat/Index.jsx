@@ -25,8 +25,10 @@ export default function Index({ workspace, chat, allTopics = [] }) {
     const [selectedFile, setSelectedFile] = useState(null);
     const [uploadError, setUploadError] = useState('');
     const [copiedId, setCopiedId] = useState(null);
+    const [copiedCodeId, setCopiedCodeId] = useState(null);
     const fileInputRef = useRef(null);
     const timeoutIdsRef = useRef([]);
+    const messageScrollRef = useRef(null);
 
     useEffect(() => {
         return () => {
@@ -34,6 +36,16 @@ export default function Index({ workspace, chat, allTopics = [] }) {
             timeoutIdsRef.current = [];
         };
     }, []);
+
+    useEffect(() => {
+        const scrollContainer = messageScrollRef.current;
+        if (!scrollContainer) return;
+
+        // Always start from top when opening/switching chat.
+        requestAnimationFrame(() => {
+            scrollContainer.scrollTop = 0;
+        });
+    }, [chat.id]);
 
     const handleTitleSave = async () => {
         const trimmed = editTitleInput.trim();
@@ -55,6 +67,18 @@ export default function Index({ workspace, chat, allTopics = [] }) {
             setCopiedId(msg.id);
             const timeoutId = setTimeout(() => {
                 setCopiedId(null);
+                timeoutIdsRef.current = timeoutIdsRef.current.filter((id) => id !== timeoutId);
+            }, 2000);
+            timeoutIdsRef.current.push(timeoutId);
+        } catch { }
+    };
+
+    const handleCopyCode = async (codeId, code) => {
+        try {
+            await navigator.clipboard.writeText(code);
+            setCopiedCodeId(codeId);
+            const timeoutId = setTimeout(() => {
+                setCopiedCodeId(null);
                 timeoutIdsRef.current = timeoutIdsRef.current.filter((id) => id !== timeoutId);
             }, 2000);
             timeoutIdsRef.current.push(timeoutId);
@@ -235,6 +259,95 @@ export default function Index({ workspace, chat, allTopics = [] }) {
         }
     };
 
+    const renderMessageContent = (content, messageId) => {
+        if (!content) return null;
+
+        const blocks = [];
+        const codeFenceRegex = /```([a-zA-Z0-9_-]+)?\n?([\s\S]*?)```/g;
+        let lastIndex = 0;
+        let match;
+
+        while ((match = codeFenceRegex.exec(content)) !== null) {
+            const [fullMatch, language, code] = match;
+            const matchIndex = match.index;
+            const textBefore = content.slice(lastIndex, matchIndex);
+
+            if (textBefore.trim()) {
+                blocks.push({
+                    type: 'text',
+                    value: textBefore.trim(),
+                });
+            }
+
+            blocks.push({
+                type: 'code',
+                language: language || 'code',
+                value: code.trim(),
+            });
+
+            lastIndex = matchIndex + fullMatch.length;
+        }
+
+        const remainingText = content.slice(lastIndex);
+        if (remainingText.trim()) {
+            blocks.push({
+                type: 'text',
+                value: remainingText.trim(),
+            });
+        }
+
+        if (blocks.length === 0) {
+            blocks.push({
+                type: 'text',
+                value: content,
+            });
+        }
+
+        return (
+            <div className="max-w-full min-w-0 space-y-3">
+                {blocks.map((block, index) => {
+                    const codeBlockId = `${messageId}-${index}`;
+                    if (block.type === 'code') {
+                        return (
+                            <div key={`code-${index}`} className="max-w-full min-w-0 overflow-hidden rounded-xl border border-[#e0d3c3] bg-[#f7f3ee]">
+                                <div className="flex items-center justify-between gap-2 border-b border-[#e0d3c3] bg-[#efe7dc] px-3 py-1.5">
+                                    <span className="text-[0.7rem] font-semibold uppercase tracking-wide text-[#7a6349]">
+                                        {block.language}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleCopyCode(codeBlockId, block.value)}
+                                        className="flex items-center justify-center rounded-md border border-[#d8c8b5] bg-white p-1 text-[#7a6349] transition-colors hover:bg-[#f8f2ea] hover:text-[#5a3e22] focus:outline-none"
+                                        title="Salin kode"
+                                    >
+                                        {copiedCodeId === codeBlockId ? (
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5 text-[#22c55e]">
+                                                <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                                            </svg>
+                                        ) : (
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" className="h-3.5 w-3.5">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+                                            </svg>
+                                        )}
+                                    </button>
+                                </div>
+                                <pre className="max-w-full whitespace-pre-wrap break-all px-4 py-3 text-xs leading-relaxed text-[#3f2f21]">
+                                    <code>{block.value}</code>
+                                </pre>
+                            </div>
+                        );
+                    }
+
+                    return (
+                        <p key={`text-${index}`} className="max-w-full whitespace-pre-wrap break-all">
+                            {block.value}
+                        </p>
+                    );
+                })}
+            </div>
+        );
+    };
+
     const headerContent = (
         <Breadcrumbs
             items={[
@@ -289,7 +402,7 @@ export default function Index({ workspace, chat, allTopics = [] }) {
 
             <div className="flex flex-col flex-1 h-full w-full relative">
 
-                <div className="flex-1 overflow-y-auto w-full [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#e0d3c3] [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-[#c4a882] transition-colors">
+                <div ref={messageScrollRef} className="flex-1 overflow-y-auto w-full [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#e0d3c3] [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-[#c4a882] transition-colors">
                     <div className="max-w-4xl mx-auto w-full px-4 sm:px-6 py-6 space-y-6">
                         {isEmpty ? (
                             <div className="flex-1 flex flex-col items-center justify-center min-h-[60vh]">
@@ -307,7 +420,7 @@ export default function Index({ workspace, chat, allTopics = [] }) {
                                         key={msg.id}
                                         className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                                     >
-                                        <div className={`flex items-end gap-2 max-w-[85%] md:max-w-[70%] lg:max-w-[60%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                                        <div className={`flex min-w-0 items-end gap-2 max-w-[85%] md:max-w-[70%] lg:max-w-[60%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
                                             <div className={`relative ${msg.role === 'assistant' ? 'group/copy' : ''}`}>
                                                 <div
                                                     className={`flex flex-col gap-3 px-5 py-4 sm:px-6 sm:py-5 text-[0.95rem] leading-relaxed border transition-all ${msg.role === 'user'
@@ -333,7 +446,7 @@ export default function Index({ workspace, chat, allTopics = [] }) {
                                                         </div>
                                                     )}
 
-                                                    {msg.content && <div>{msg.content}</div>}
+                                                    {msg.content && renderMessageContent(msg.content, msg.id)}
                                                 </div>
 
                                                 {msg.role === 'assistant' && msg.content && (

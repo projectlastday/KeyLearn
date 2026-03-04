@@ -17,6 +17,18 @@ class Topic extends Model
         'color_code',
     ];
 
+    protected static function booted(): void
+    {
+        static::deleting(function (Topic $topic) {
+            if ($topic->isForceDeleting()) {
+                $topic->workspaces()->withTrashed()->get()->each->forceDelete();
+                return;
+            }
+
+            $topic->workspaces()->get()->each->delete();
+        });
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

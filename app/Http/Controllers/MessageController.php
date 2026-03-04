@@ -23,13 +23,13 @@ class MessageController extends Controller
         $message = trim((string) $request->input('message', ''));
         $uploadedFile = $request->file('file');
 
-        if ($message === '' && !$uploadedFile) {
+        if ($message === '' && ! $uploadedFile) {
             return response()->json(['reply' => 'Pesan atau file PDF wajib diisi.'], 422);
         }
 
         $model = $request->input('model', 'gemini-2.5-flash');
         $allowedModels = ['gemini-2.5-flash', 'llama-3.3-70b-versatile', 'deepseek/deepseek-r1:free'];
-        if (!in_array($model, $allowedModels, true)) {
+        if (! in_array($model, $allowedModels, true)) {
             $model = 'gemini-2.5-flash';
         }
 
@@ -62,7 +62,7 @@ class MessageController extends Controller
 
         if ($uploadedFile) {
             $filePath = $uploadedFile->getRealPath();
-            if (!$filePath || !is_readable($filePath)) {
+            if (! $filePath || ! is_readable($filePath)) {
                 return response()->json([
                     'reply' => 'File PDF tidak dapat dibaca. Silakan unggah ulang file Anda.',
                 ], 422);
@@ -91,11 +91,11 @@ class MessageController extends Controller
         $reply = '';
         if ($model === 'gemini-2.5-flash') {
             $apiKey = env('GEMINI_API_KEY');
-            if (!$apiKey) {
+            if (! $apiKey) {
                 return $this->errorResponse($chatSession, $userMessage, 'API Key Gemini belum dikonfigurasi', $model);
             }
 
-            $response = Http::timeout(120)->post('https://generativelanguage.googleapis.com/v1beta/models/' . $model . ':generateContent?key=' . $apiKey, [
+            $response = Http::timeout(120)->post('https://generativelanguage.googleapis.com/v1beta/models/'.$model.':generateContent?key='.$apiKey, [
                 'contents' => $contents,
             ]);
 
@@ -104,11 +104,11 @@ class MessageController extends Controller
                 $replyParts = data_get($data, 'candidates.0.content.parts', []);
                 $reply = collect($replyParts)->pluck('text')->filter()->implode("\n");
             } else {
-                $reply = 'Error Gemini Native: ' . (data_get($response->json(), 'error.message') ?: $response->body());
+                $reply = 'Error Gemini Native: '.(data_get($response->json(), 'error.message') ?: $response->body());
             }
         } elseif (str_contains($model, 'llama-3.3')) {
             $apiKey = env('GROQ_API_KEY');
-            if (!$apiKey) {
+            if (! $apiKey) {
                 return $this->errorResponse($chatSession, $userMessage, 'API Key Groq belum dikonfigurasi', $model);
             }
 
@@ -130,12 +130,12 @@ class MessageController extends Controller
             if ($response->successful()) {
                 $reply = data_get($response->json(), 'choices.0.message.content', '');
             } else {
-                $reply = 'Error Groq: ' . (data_get($response->json(), 'error.message') ?: $response->body());
+                $reply = 'Error Groq: '.(data_get($response->json(), 'error.message') ?: $response->body());
             }
         } else {
             // All other models (OpenRouter)
             $apiKey = env('OPENROUTER_API_KEY');
-            if (!$apiKey) {
+            if (! $apiKey) {
                 return $this->errorResponse($chatSession, $userMessage, 'API Key OpenRouter belum dikonfigurasi', $model);
             }
 
@@ -161,11 +161,11 @@ class MessageController extends Controller
             if ($response->successful()) {
                 $reply = data_get($response->json(), 'choices.0.message.content', '');
             } else {
-                $reply = 'Error OpenRouter: ' . (data_get($response->json(), 'error.message') ?: $response->body());
+                $reply = 'Error OpenRouter: '.(data_get($response->json(), 'error.message') ?: $response->body());
             }
         }
 
-        if (!$reply) {
+        if (! $reply) {
             $reply = 'Maaf, saya tidak dapat memproses permintaan ini.';
         }
 
@@ -190,6 +190,7 @@ class MessageController extends Controller
             ],
         ]);
     }
+
     private function errorResponse($chatSession, $userMessage, $content, $model): JsonResponse
     {
         $aiMessage = $chatSession->messages()->create([

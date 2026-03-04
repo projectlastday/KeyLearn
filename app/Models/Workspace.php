@@ -18,6 +18,18 @@ class Workspace extends Model
         'description',
     ];
 
+    protected static function booted(): void
+    {
+        static::deleting(function (Workspace $workspace) {
+            if ($workspace->isForceDeleting()) {
+                $workspace->chatSessions()->withTrashed()->get()->each->forceDelete();
+                return;
+            }
+
+            $workspace->chatSessions()->get()->each->delete();
+        });
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

@@ -62,7 +62,7 @@ class ChatSessionController extends Controller
         return response()->json([
             'id' => $chatSession->id,
             'title' => $chatSession->title,
-            'redirect_url' => '/workspaces/' . $workspace->id . '/chat/' . $chatSession->id,
+            'redirect_url' => '/workspaces/'.$workspace->id.'/chat/'.$chatSession->id,
         ], 201);
     }
 

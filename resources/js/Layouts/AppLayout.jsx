@@ -41,6 +41,7 @@ export default function AppLayout({ header, children, topics = [], isChatLayout 
     };
 
     const workspaceChildren = [
+        { label: 'Semua', href: '/workspaces?topic=Semua' },
         ...effectiveTopics.filter(t => t !== 'Semua').map(t => ({
             label: t,
             href: `/workspaces?topic=${t}`
@@ -121,28 +122,22 @@ export default function AppLayout({ header, children, topics = [], isChatLayout 
 
                                     {isSidebarOpen && openMenus[item.label] && (
                                         <div className="mt-1 flex flex-col pl-11 pr-2 space-y-1 animate-in fade-in slide-in-from-top-2 duration-200">
-                                            {item.children.length > 0 ? (
-                                                item.children.map((child) => {
-                                                    const isActiveChild = url.includes(`topic=${child.label}`);
-                                                    return (
-                                                        <Link
-                                                            key={child.label}
-                                                            href={child.href}
-                                                            title={child.label}
-                                                            className={`px-3 py-2 text-sm rounded-xl transition-colors ${isActiveChild
-                                                                ? 'bg-amber-50 text-amber-900 font-medium'
-                                                                : 'text-gray-500 hover:bg-amber-50 hover:text-amber-700'
-                                                                }`}
-                                                        >
-                                                            {child.label.length > 20 ? child.label.substring(0, 20) + '...' : child.label}
-                                                        </Link>
-                                                    );
-                                                })
-                                            ) : (
-                                                <div className="px-3 py-2 text-sm text-gray-400">
-                                                    Belum ada topik
-                                                </div>
-                                            )}
+                                            {item.children.map((child) => {
+                                                const isActiveChild = url.includes(`topic=${child.label}`);
+                                                return (
+                                                    <Link
+                                                        key={child.label}
+                                                        href={child.href}
+                                                        title={child.label}
+                                                        className={`px-3 py-2 text-sm rounded-xl transition-colors ${isActiveChild
+                                                            ? 'bg-amber-50 text-amber-900 font-medium'
+                                                            : 'text-gray-500 hover:bg-amber-50 hover:text-amber-700'
+                                                            }`}
+                                                    >
+                                                        {child.label.length > 20 ? child.label.substring(0, 20) + '...' : child.label}
+                                                    </Link>
+                                                );
+                                            })}
                                         </div>
                                     )}
                                 </div>

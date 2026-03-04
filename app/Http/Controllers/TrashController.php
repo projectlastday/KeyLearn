@@ -61,6 +61,7 @@ class TrashController extends Controller
     {
         $topic = $request->user()->topics()->onlyTrashed()->findOrFail($id);
         $topic->restore();
+
         return response()->json(['message' => 'Topik berhasil dipulihkan.']);
     }
 
@@ -68,6 +69,7 @@ class TrashController extends Controller
     {
         $topic = $request->user()->topics()->onlyTrashed()->findOrFail($id);
         $topic->forceDelete();
+
         return response()->json(null, 204);
     }
 
@@ -80,6 +82,7 @@ class TrashController extends Controller
         }
 
         $workspace->restore();
+
         return response()->json(['message' => 'Folder berhasil dipulihkan.']);
     }
 
@@ -87,6 +90,7 @@ class TrashController extends Controller
     {
         $workspace = $request->user()->workspaces()->onlyTrashed()->findOrFail($id);
         $workspace->forceDelete();
+
         return response()->json(null, 204);
     }
 
@@ -104,6 +108,7 @@ class TrashController extends Controller
         }
 
         $chat->restore();
+
         return response()->json(['message' => 'Obrolan berhasil dipulihkan.']);
     }
 
@@ -114,6 +119,7 @@ class TrashController extends Controller
         abort_unless($workspace && $workspace->user_id === $request->user()->id, 403);
 
         $chat->forceDelete();
+
         return response()->json(null, 204);
     }
 }
