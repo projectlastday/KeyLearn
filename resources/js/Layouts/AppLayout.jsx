@@ -1,6 +1,7 @@
 import ApplicationLogo from '@/Components/ApplicationLogo';
 import { Link, usePage, router } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
+import axios from 'axios';
 
 export default function AppLayout({ header, children, topics = [], isChatLayout = false }) {
     const { url, props } = usePage();
@@ -14,12 +15,49 @@ export default function AppLayout({ header, children, topics = [], isChatLayout 
         return saved === 'true';
     });
     const [openMenus, setOpenMenus] = useState({ 'Ruang Kerja': url.startsWith('/workspaces') });
+    const [dueReminders, setDueReminders] = useState([]);
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
             window.localStorage.setItem('keylearn.sidebar.open', String(isSidebarOpen));
         }
     }, [isSidebarOpen]);
+
+    useEffect(() => {
+        if (!user) {
+            setDueReminders([]);
+            return undefined;
+        }
+
+        let isCancelled = false;
+
+        const fetchDueReminders = async () => {
+            try {
+                const response = await axios.get('/api/reminders/due');
+
+                if (!isCancelled) {
+                    setDueReminders(Array.isArray(response.data) ? response.data : []);
+                }
+            } catch {
+            }
+        };
+
+        fetchDueReminders();
+        const handleFocusRefresh = () => {
+            fetchDueReminders();
+        };
+
+        const intervalId = window.setInterval(fetchDueReminders, 5000);
+        window.addEventListener('focus', handleFocusRefresh);
+        document.addEventListener('visibilitychange', handleFocusRefresh);
+
+        return () => {
+            isCancelled = true;
+            window.clearInterval(intervalId);
+            window.removeEventListener('focus', handleFocusRefresh);
+            document.removeEventListener('visibilitychange', handleFocusRefresh);
+        };
+    }, [user]);
 
     const toggleMenu = (label) => {
         setOpenMenus(prev => ({ ...prev, [label]: !prev[label] }));
@@ -38,6 +76,26 @@ export default function AppLayout({ header, children, topics = [], isChatLayout 
 
     const handleLogout = () => {
         router.post(route('logout'));
+    };
+
+    const formatReminderDateTime = (iso) => {
+        if (!iso) return '-';
+
+        return new Intl.DateTimeFormat('id-ID', {
+            day: 'numeric',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'Asia/Jakarta',
+        }).format(new Date(iso)) + ' WIB';
+    };
+
+    const acknowledgeReminder = async (id) => {
+        try {
+            await axios.post(`/api/reminders/items/${id}/acknowledge`);
+            setDueReminders(prev => prev.filter((item) => item.id !== id));
+        } catch {
+        }
     };
 
     const workspaceChildren = [
@@ -69,6 +127,16 @@ export default function AppLayout({ header, children, topics = [], isChatLayout 
                 </svg>
             ),
             children: workspaceChildren,
+        },
+        {
+            label: 'Statistik',
+            href: '/statistik',
+            active: url.startsWith('/statistik'),
+            icon: (
+                <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 20V10m5 10V4m5 16v-7M4 20h16" />
+                </svg>
+            ),
         },
     ];
 
@@ -281,6 +349,50 @@ export default function AppLayout({ header, children, topics = [], isChatLayout 
                     {children}
                 </main>
             </div>
+            {user && dueReminders.length > 0 && (
+                <div className="pointer-events-none fixed bottom-4 right-4 z-40 w-[min(24rem,calc(100vw-2rem))]">
+                    <div className="pointer-events-auto rounded-3xl border border-[#e0d3c3] bg-white p-4 shadow-lg shadow-[#d7c5b2]/30">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                            <div>
+                                <p className="text-sm font-semibold text-[#5a3e22]">Pengingat</p>
+                                <p className="text-xs text-[#8c7a66]">Ada pengingat yang sudah waktunya.</p>
+                            </div>
+                            <span className="rounded-full bg-[#efe4d7] px-2 py-1 text-xs font-medium text-[#8c7a66]">
+                                {dueReminders.length}
+                            </span>
+                        </div>
+                        <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
+                            {dueReminders.map((item) => (
+                                <div key={item.id} className="rounded-2xl border border-[#eee3d6] bg-[#fcfaf7] px-3 py-3">
+                                    <p className="text-sm font-medium text-[#5a3e22] break-words">{item.message}</p>
+                                    <p className="mt-1 text-xs text-[#8c7a66]">
+                                        {item.workspace_title || 'Folder'}{item.widget_title ? ` • ${item.widget_title}` : ''}
+                                    </p>
+                                    <p className="mt-1 text-xs text-[#a08f7b]">{formatReminderDateTime(item.remind_at)}</p>
+                                    <div className="mt-3 flex items-center justify-end gap-2">
+                                        {item.workspace_id && (
+                                            <button
+                                                type="button"
+                                                onClick={() => router.visit(`/workspaces?workspace=${item.workspace_id}`)}
+                                                className="px-3 py-1.5 rounded-xl text-xs font-medium text-[#6b5a47] hover:bg-[#efe4d7] transition-colors focus:outline-none"
+                                            >
+                                                Buka Folder
+                                            </button>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => acknowledgeReminder(item.id)}
+                                            className="px-3 py-1.5 rounded-xl text-xs font-medium bg-[#a67c52] text-white hover:bg-[#8b6640] transition-colors focus:outline-none"
+                                        >
+                                            Sudah Dilihat
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

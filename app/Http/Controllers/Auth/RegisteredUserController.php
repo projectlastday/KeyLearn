@@ -58,17 +58,21 @@ class RegisteredUserController extends Controller
             ])->withInput();
         }
 
-        $user = DB::transaction(function () use ($validated, $normalizedPhone) {
+        $phoneVerificationEnabled = (bool) config('auth.phone_verification.enabled', true);
+
+        $user = DB::transaction(function () use ($validated, $normalizedPhone, $phoneVerificationEnabled) {
             $user = User::create([
                 'name' => $validated['name'],
                 'email' => $validated['email'],
                 'phone' => $normalizedPhone,
                 'password' => Hash::make($validated['password']),
-                'phone_verification_required' => true,
-                'phone_verified_at' => null,
+                'phone_verification_required' => $phoneVerificationEnabled,
+                'phone_verified_at' => $phoneVerificationEnabled ? null : now(),
             ]);
 
-            $this->verificationService->createAndSend($user);
+            if ($phoneVerificationEnabled) {
+                $this->verificationService->createAndSend($user);
+            }
 
             return $user;
         });
@@ -76,6 +80,10 @@ class RegisteredUserController extends Controller
         event(new Registered($user));
 
         Auth::login($user);
+
+        if (! $phoneVerificationEnabled) {
+            return redirect('/workspaces');
+        }
 
         return redirect()->route('phone.verify.notice')
             ->with('status', 'OTP sudah dikirim ke WhatsApp Anda.');

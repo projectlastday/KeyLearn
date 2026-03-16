@@ -112,4 +112,8 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    'phone_verification' => [
+        'enabled' => env('PHONE_VERIFICATION_ENABLED', true),
+    ],
+
 ];

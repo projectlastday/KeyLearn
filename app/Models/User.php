@@ -64,6 +64,10 @@ class User extends Authenticatable
 
     public function hasVerifiedPhone(): bool
     {
+        if (! config('auth.phone_verification.enabled', true)) {
+            return true;
+        }
+
         if (! $this->phone_verification_required) {
             return true;
         }

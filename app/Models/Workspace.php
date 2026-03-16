@@ -16,7 +16,15 @@ class Workspace extends Model
         'topic_id',
         'title',
         'description',
+        'last_opened_at',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'last_opened_at' => 'datetime',
+        ];
+    }
 
     protected static function booted(): void
     {
@@ -50,5 +58,10 @@ class Workspace extends Model
     public function widgets(): HasMany
     {
         return $this->hasMany(Widget::class);
+    }
+
+    public function openEvents(): HasMany
+    {
+        return $this->hasMany(WorkspaceOpenEvent::class);
     }
 }

@@ -32,7 +32,7 @@ const featureCards = [
     },
 ];
 
-export default function Welcome({ recentChats = [] }) {
+export default function Welcome({ recentFolders = [] }) {
     const { props } = usePage();
     const isLoggedIn = Boolean(props.auth?.user);
 
@@ -67,15 +67,15 @@ export default function Welcome({ recentChats = [] }) {
 
                 {isLoggedIn ? (
                     <div className="mb-10">
-                        <h2 className="text-lg font-semibold text-[#5a3e22] mb-6">Obrolan terakhir</h2>
+                        <h2 className="text-lg font-semibold text-[#5a3e22] mb-6">Folder terakhir</h2>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            {recentChats.length > 0 ? (
-                                recentChats.map((chat) => (
+                            {recentFolders.length > 0 ? (
+                                recentFolders.map((folder) => (
                                     <Link
-                                        key={chat.id}
-                                        href={`/workspaces/${chat.workspace_id}/chat/${chat.id}`}
+                                        key={folder.id}
+                                        href={`/workspaces?workspace=${folder.id}`}
                                         className="bg-[#fdfbf8] rounded-2xl border-2 border-[#d4b896] p-6 hover:border-[#b8926a] hover:shadow-md transition-all"
-                                        title={chat.title}
+                                        title={folder.title}
                                     >
                                         <div className="mb-4 opacity-80 text-[#a67c52]">
                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.7" stroke="currentColor" className="w-8 h-8">
@@ -83,19 +83,19 @@ export default function Welcome({ recentChats = [] }) {
                                             </svg>
                                         </div>
                                         <h3 className="text-base font-semibold text-[#5a3e22] mb-2">
-                                            {chat.title.length > 40 ? `${chat.title.substring(0, 40)}...` : chat.title}
+                                            {folder.title.length > 40 ? `${folder.title.substring(0, 40)}...` : folder.title}
                                         </h3>
                                         <p className="text-sm text-[#8c7a66] leading-relaxed mb-2">
-                                            {chat.workspace_title || 'Ruang Kerja'}
+                                            {folder.topic || 'Tanpa topik'}
                                         </p>
                                         <p className="text-xs text-[#b8a28a]">
-                                            {chat.updated_at ? new Date(chat.updated_at).toLocaleDateString('id-ID') : 'Baru saja dibuka'}
+                                            {folder.opened_at ? new Date(folder.opened_at).toLocaleDateString('id-ID') : 'Baru saja dibuka'}
                                         </p>
                                     </Link>
                                 ))
                             ) : (
                                 <div className="md:col-span-3 bg-[#fdfbf8] rounded-2xl border-2 border-[#d4b896] p-6 text-sm text-[#8c7a66]">
-                                    Belum ada riwayat obrolan. Buka ruang kerja dan mulai obrolan baru.
+                                    Belum ada riwayat folder. Buka ruang kerja dan pilih folder.
                                 </div>
                             )}
                         </div>

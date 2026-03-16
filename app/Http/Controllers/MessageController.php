@@ -28,7 +28,12 @@ class MessageController extends Controller
         }
 
         $model = $request->input('model', 'gemini-2.5-flash');
-        $allowedModels = ['gemini-2.5-flash', 'llama-3.3-70b-versatile', 'deepseek/deepseek-r1:free'];
+        $allowedModels = [
+            'gemini-2.5-flash',
+            'llama-3.3-70b-versatile',
+            'google/gemini-2.0-flash-lite-001:free',
+            'deepseek/deepseek-r1:free',
+        ];
         if (! in_array($model, $allowedModels, true)) {
             $model = 'gemini-2.5-flash';
         }
@@ -90,7 +95,7 @@ class MessageController extends Controller
 
         $reply = '';
         if ($model === 'gemini-2.5-flash') {
-            $apiKey = env('GEMINI_API_KEY');
+            $apiKey = config('services.gemini.api_key');
             if (! $apiKey) {
                 return $this->errorResponse($chatSession, $userMessage, 'API Key Gemini belum dikonfigurasi', $model);
             }
@@ -107,7 +112,7 @@ class MessageController extends Controller
                 $reply = 'Error Gemini Native: '.(data_get($response->json(), 'error.message') ?: $response->body());
             }
         } elseif (str_contains($model, 'llama-3.3')) {
-            $apiKey = env('GROQ_API_KEY');
+            $apiKey = config('services.groq.api_key');
             if (! $apiKey) {
                 return $this->errorResponse($chatSession, $userMessage, 'API Key Groq belum dikonfigurasi', $model);
             }
@@ -134,7 +139,7 @@ class MessageController extends Controller
             }
         } else {
             // All other models (OpenRouter)
-            $apiKey = env('OPENROUTER_API_KEY');
+            $apiKey = config('services.openrouter.api_key');
             if (! $apiKey) {
                 return $this->errorResponse($chatSession, $userMessage, 'API Key OpenRouter belum dikonfigurasi', $model);
             }

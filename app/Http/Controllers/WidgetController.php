@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Widget;
 use App\Models\Workspace;
+use App\Support\WidgetData;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -14,7 +15,7 @@ class WidgetController extends Controller
     {
         $validated = $request->validate([
             'workspace_id' => 'required|exists:workspaces,id',
-            'type' => 'required|string|in:note,chat',
+            'type' => 'required|string|in:note,chat,reminder,todo,timer,whiteboard,pdf,youtube',
             'title' => 'required|string|max:100',
             'size_preset' => 'nullable|string|in:S,M,L',
         ]);
@@ -59,35 +60,40 @@ class WidgetController extends Controller
             if ($widget->type === 'note') {
                 $widget->note()->create([
                     'content' => '',
+                    'text_size' => 'normal',
+                ]);
+            }
+
+            if ($widget->type === 'whiteboard') {
+                $widget->whiteboard()->create([
+                    'strokes' => [],
+                ]);
+            }
+
+            if ($widget->type === 'todo') {
+                foreach (['belum', 'sedang dilakukan', 'selesai dilakukan'] as $index => $name) {
+                    $widget->todoStatuses()->create([
+                        'name' => $name,
+                        'is_system' => true,
+                        'sort_order' => $index,
+                    ]);
+                }
+            }
+
+            if ($widget->type === 'timer') {
+                $widget->timer()->create([
+                    'elapsed_seconds' => 0,
+                    'is_running' => false,
+                    'started_at' => null,
                 ]);
             }
 
             return $widget;
         });
 
-        $widget->load(['note', 'chatSession']);
+        $widget->load(['note', 'youtube', 'pdf', 'whiteboard', 'chatSession', 'reminders', 'todoStatuses', 'todoItems.status', 'timer']);
 
-        return response()->json([
-            'id' => $widget->id,
-            'workspace_id' => $widget->workspace_id,
-            'type' => $widget->type,
-            'title' => $widget->title,
-            'size_preset' => $widget->size_preset,
-            'grid_x' => $widget->grid_x,
-            'grid_y' => $widget->grid_y,
-            'grid_w' => $widget->grid_w,
-            'grid_h' => $widget->grid_h,
-            'sort_order' => $widget->sort_order,
-            'chat_session_id' => $widget->chat_session_id,
-            'chat' => $widget->chatSession ? [
-                'id' => $widget->chatSession->id,
-                'updated_at' => $widget->chatSession->updated_at?->toISOString(),
-            ] : null,
-            'note' => $widget->note ? [
-                'id' => $widget->note->id,
-                'content' => $widget->note->content,
-            ] : null,
-        ], 201);
+        return response()->json(WidgetData::widget($widget), 201);
     }
 
     public function update(Request $request, Widget $widget): JsonResponse
@@ -115,7 +121,9 @@ class WidgetController extends Controller
             $widget->chatSession->update(['title' => $validated['title']]);
         }
 
-        return response()->json($widget->fresh());
+        $widget->load(['note', 'youtube', 'pdf', 'whiteboard', 'chatSession', 'reminders', 'todoStatuses', 'todoItems.status', 'timer']);
+
+        return response()->json(WidgetData::widget($widget->fresh(['note', 'youtube', 'pdf', 'whiteboard', 'chatSession', 'reminders', 'todoStatuses', 'todoItems.status', 'timer'])));
     }
 
     public function destroy(Request $request, Widget $widget): JsonResponse
@@ -175,7 +183,7 @@ class WidgetController extends Controller
             'grid_h' => $gridH,
         ]);
 
-        return response()->json($widget->fresh());
+        return response()->json(WidgetData::widget($widget->fresh(['note', 'youtube', 'pdf', 'whiteboard', 'chatSession', 'reminders', 'todoStatuses', 'todoItems.status', 'timer'])));
     }
 
     private function authorizeWidget(Request $request, Widget $widget): void

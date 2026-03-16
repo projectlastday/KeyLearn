@@ -21,17 +21,30 @@ class WidgetNoteController extends Controller
 
         $validated = $request->validate([
             'content' => 'nullable|string',
+            'text_size' => 'nullable|string|in:small,normal,large',
         ]);
+
+        $existingNote = $widget->note;
+        $content = array_key_exists('content', $validated)
+            ? ($validated['content'] ?? '')
+            : ($existingNote?->content ?? '');
+        $textSize = array_key_exists('text_size', $validated)
+            ? $validated['text_size']
+            : ($existingNote?->text_size ?? 'normal');
 
         $note = $widget->note()->updateOrCreate(
             ['widget_id' => $widget->id],
-            ['content' => $validated['content'] ?? '']
+            [
+                'content' => $content,
+                'text_size' => $textSize,
+            ]
         );
 
         return response()->json([
             'widget_id' => $widget->id,
             'note_id' => $note->id,
             'content' => $note->content,
+            'text_size' => $note->text_size,
         ]);
     }
 }

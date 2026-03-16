@@ -18,8 +18,15 @@ class ChatSessionController extends Controller
         abort_unless($workspace->user_id === $request->user()->id, 403);
         abort_unless($chatSession->workspace_id === $workspace->id, 404);
 
-        // Mark this chat as recently opened for homepage "Obrolan terakhir".
+        // Mark this chat as recently opened.
         $chatSession->touch();
+        // Track the last opened folder for homepage "Folder terakhir".
+        $workspace->update([
+            'last_opened_at' => now(),
+        ]);
+        $workspace->openEvents()->create([
+            'opened_at' => now(),
+        ]);
 
         $workspace->load('topic');
 

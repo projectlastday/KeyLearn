@@ -10,6 +10,7 @@ class WidgetNote extends Model
     protected $fillable = [
         'widget_id',
         'content',
+        'text_size',
     ];
 
     public function widget(): BelongsTo

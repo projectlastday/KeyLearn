@@ -20,13 +20,15 @@ class FonnteClient
             throw new RuntimeException('Token Fonnte belum dikonfigurasi.');
         }
 
+        $target = preg_replace('/\D+/', '', $phone) ?: $phone;
+
         $response = Http::timeout(20)
             ->withHeaders([
                 'Authorization' => $token,
             ])
             ->asForm()
             ->post($endpoint, [
-                'target' => $phone,
+                'target' => $target,
                 'message' => $message,
             ]);
 
@@ -35,7 +37,21 @@ class FonnteClient
                 ?? data_get($response->json(), 'message')
                 ?? $response->body();
 
-            throw new RuntimeException('Gagal mengirim OTP WhatsApp: '.$message);
+            throw new RuntimeException('Gagal mengirim WhatsApp: '.$message);
+        }
+
+        $payload = $response->json();
+        if (is_array($payload) && array_key_exists('status', $payload)) {
+            $providerAccepted = filter_var($payload['status'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            $isAccepted = $providerAccepted ?? in_array($payload['status'], [1, '1'], true);
+
+            if (! $isAccepted) {
+                $reason = data_get($payload, 'reason')
+                    ?? data_get($payload, 'message')
+                    ?? 'Provider menolak pesan.';
+
+                throw new RuntimeException('Gagal mengirim WhatsApp: '.$reason);
+            }
         }
     }
 }

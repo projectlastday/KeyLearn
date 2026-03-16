@@ -1,3 +1,61 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer components {
+    .note-markdown h1,
+    .note-markdown h2,
+    .note-markdown h3,
+    .note-markdown h4 {
+        @apply mt-4 mb-2 font-semibold text-[#5a3e22];
+    }
+
+    .note-markdown h1 {
+        @apply text-2xl;
+    }
+
+    .note-markdown h2 {
+        @apply text-xl;
+    }
+
+    .note-markdown h3 {
+        @apply text-lg;
+    }
+
+    .note-markdown p {
+        @apply mb-2 leading-relaxed;
+    }
+
+    .note-markdown ul,
+    .note-markdown ol {
+        @apply mb-2 ml-5;
+    }
+
+    .note-markdown ul {
+        @apply list-disc;
+    }
+
+    .note-markdown ol {
+        @apply list-decimal;
+    }
+
+    .note-markdown blockquote {
+        @apply my-2 border-l-4 border-[#dbc6aa] pl-3 text-[#73583b];
+    }
+
+    .note-markdown pre {
+        @apply my-2 overflow-x-auto rounded-lg bg-[#f6efe4] p-3 text-sm;
+    }
+
+    .note-markdown code {
+        @apply rounded bg-[#f6efe4] px-1 py-0.5 text-[0.9em];
+    }
+
+    .note-markdown a {
+        @apply text-[#8f6233] underline underline-offset-2;
+    }
+
+    .note-markdown mark {
+        @apply rounded bg-[#fff1a8] px-1;
+    }
+}

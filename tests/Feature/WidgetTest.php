@@ -31,9 +31,13 @@ test('user can create note widget in own workspace', function () {
         'type' => 'note',
         'title' => 'Catatan Bab 1',
     ]);
+    $this->assertDatabaseHas('widget_notes', [
+        'widget_id' => $response->json('id'),
+        'text_size' => 'normal',
+    ]);
 });
 
-test('user can update note content', function () {
+test('user can update note content and text size', function () {
     $user = User::factory()->create();
     $topic = Topic::create([
         'user_id' => $user->id,
@@ -55,12 +59,80 @@ test('user can update note content', function () {
 
     $updateResponse = $this->actingAs($user)->put("/api/widget-notes/{$widgetId}", [
         'content' => 'Isi catatan penting',
+        'text_size' => 'large',
     ]);
 
     $updateResponse->assertOk();
+    expect($updateResponse->json('text_size'))->toBe('large');
     $this->assertDatabaseHas('widget_notes', [
         'widget_id' => $widgetId,
         'content' => 'Isi catatan penting',
+        'text_size' => 'large',
+    ]);
+});
+
+test('updating note with invalid text size returns validation error', function () {
+    $user = User::factory()->create();
+    $topic = Topic::create([
+        'user_id' => $user->id,
+        'name' => 'Bahasa Indonesia',
+    ]);
+    $workspace = Workspace::create([
+        'user_id' => $user->id,
+        'topic_id' => $topic->id,
+        'title' => 'Ringkasan',
+    ]);
+
+    $createResponse = $this->actingAs($user)->post('/api/widgets', [
+        'workspace_id' => $workspace->id,
+        'type' => 'note',
+        'title' => 'Catatan',
+    ]);
+
+    $widgetId = $createResponse->json('id');
+
+    $this->actingAs($user)
+        ->putJson("/api/widget-notes/{$widgetId}", [
+            'text_size' => 'gigantic',
+        ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['text_size']);
+});
+
+test('content-only note update preserves previous text size', function () {
+    $user = User::factory()->create();
+    $topic = Topic::create([
+        'user_id' => $user->id,
+        'name' => 'Kimia',
+    ]);
+    $workspace = Workspace::create([
+        'user_id' => $user->id,
+        'topic_id' => $topic->id,
+        'title' => 'Reaksi',
+    ]);
+
+    $createResponse = $this->actingAs($user)->post('/api/widgets', [
+        'workspace_id' => $workspace->id,
+        'type' => 'note',
+        'title' => 'Catatan',
+    ]);
+    $widgetId = $createResponse->json('id');
+
+    $this->actingAs($user)->put("/api/widget-notes/{$widgetId}", [
+        'content' => 'Versi awal',
+        'text_size' => 'small',
+    ])->assertOk();
+
+    $response = $this->actingAs($user)->put("/api/widget-notes/{$widgetId}", [
+        'content' => 'Versi baru',
+    ]);
+
+    $response->assertOk();
+    expect($response->json('text_size'))->toBe('small');
+    $this->assertDatabaseHas('widget_notes', [
+        'widget_id' => $widgetId,
+        'content' => 'Versi baru',
+        'text_size' => 'small',
     ]);
 });
 

@@ -41,6 +41,10 @@ class PhoneVerificationController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        if ($request->user()?->hasVerifiedPhone()) {
+            return redirect('/workspaces');
+        }
+
         $request->validate([
             'otp' => ['required', 'digits:6'],
         ]);
@@ -52,6 +56,10 @@ class PhoneVerificationController extends Controller
 
     public function resend(Request $request): RedirectResponse
     {
+        if ($request->user()?->hasVerifiedPhone()) {
+            return redirect('/workspaces');
+        }
+
         $this->verificationService->resend($request->user());
 
         return back()->with('status', 'Kode OTP baru sudah dikirim ke WhatsApp Anda.');

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ChatSession;
+use App\Models\Topic;
 use App\Models\Widget;
 use App\Models\Workspace;
 use Illuminate\Http\JsonResponse;
@@ -52,6 +53,7 @@ class TrashController extends Controller
             ]);
 
         $widgets = Widget::onlyTrashed()
+            ->where('type', '!=', 'chat')
             ->whereHas('workspace', fn ($q) => $q->withTrashed()->where('user_id', $user->id))
             ->with(['workspace' => fn ($q) => $q->withTrashed()])
             ->orderBy('deleted_at', 'desc')
@@ -60,7 +62,7 @@ class TrashController extends Controller
                 'id' => $w->id,
                 'title' => $w->title,
                 'workspace' => $w->workspace?->title ?? '-',
-                'type' => 'widget',
+                'type' => $w->type,
                 'deleted_at' => $w->deleted_at->toISOString(),
             ]);
 
@@ -75,9 +77,12 @@ class TrashController extends Controller
     public function restoreTopic(Request $request, int $id): JsonResponse
     {
         $topic = $request->user()->topics()->onlyTrashed()->findOrFail($id);
-        $topic->restore();
+        $restored = $this->restoreTopicTree($topic);
 
-        return response()->json(['message' => 'Topik berhasil dipulihkan.']);
+        return response()->json([
+            'message' => 'Topik berhasil dipulihkan.',
+            'restored' => $restored,
+        ]);
     }
 
     public function forceDeleteTopic(Request $request, int $id): JsonResponse
@@ -91,14 +96,23 @@ class TrashController extends Controller
     public function restoreWorkspace(Request $request, int $id): JsonResponse
     {
         $workspace = $request->user()->workspaces()->onlyTrashed()->findOrFail($id);
+        $restoredTopicIds = [];
 
         if ($workspace->topic && $workspace->topic->trashed()) {
             $workspace->topic->restore();
+            $restoredTopicIds[] = $workspace->topic->id;
         }
 
-        $workspace->restore();
+        $restored = $this->restoreWorkspaceTree($workspace);
+        $restored['topics'] = array_values(array_unique([
+            ...($restored['topics'] ?? []),
+            ...$restoredTopicIds,
+        ]));
 
-        return response()->json(['message' => 'Folder berhasil dipulihkan.']);
+        return response()->json([
+            'message' => 'Folder berhasil dipulihkan.',
+            'restored' => $restored,
+        ]);
     }
 
     public function forceDeleteWorkspace(Request $request, int $id): JsonResponse
@@ -168,5 +182,95 @@ class TrashController extends Controller
         $widget->forceDelete();
 
         return response()->json(null, 204);
+    }
+
+    public function empty(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $user->topics()->onlyTrashed()->get()->each->forceDelete();
+        $user->workspaces()->onlyTrashed()->get()->each->forceDelete();
+
+        ChatSession::onlyTrashed()
+            ->whereHas('workspace', fn ($q) => $q->withTrashed()->where('user_id', $user->id))
+            ->get()
+            ->each
+            ->forceDelete();
+
+        Widget::onlyTrashed()
+            ->whereHas('workspace', fn ($q) => $q->withTrashed()->where('user_id', $user->id))
+            ->get()
+            ->each
+            ->forceDelete();
+
+        return response()->json(['message' => 'Tong sampah berhasil dikosongkan.']);
+    }
+
+    private function restoreTopicTree(Topic $topic): array
+    {
+        $topic->restore();
+
+        $restored = [
+            'topics' => [$topic->id],
+            'workspaces' => [],
+            'widgets' => [],
+            'chats' => [],
+        ];
+
+        $topic->workspaces()
+            ->onlyTrashed()
+            ->get()
+            ->each(function (Workspace $workspace) use (&$restored) {
+                $workspaceRestored = $this->restoreWorkspaceTree($workspace);
+                $restored['workspaces'] = [...$restored['workspaces'], ...$workspaceRestored['workspaces']];
+                $restored['widgets'] = [...$restored['widgets'], ...$workspaceRestored['widgets']];
+                $restored['chats'] = [...$restored['chats'], ...$workspaceRestored['chats']];
+            });
+
+        return [
+            'topics' => array_values(array_unique($restored['topics'])),
+            'workspaces' => array_values(array_unique($restored['workspaces'])),
+            'widgets' => array_values(array_unique($restored['widgets'])),
+            'chats' => array_values(array_unique($restored['chats'])),
+        ];
+    }
+
+    private function restoreWorkspaceTree(Workspace $workspace): array
+    {
+        if ($workspace->trashed()) {
+            $workspace->restore();
+        }
+
+        $restoredWidgets = [];
+        $restoredChats = [];
+
+        $workspace->widgets()
+            ->onlyTrashed()
+            ->with('chatSession')
+            ->get()
+            ->each(function (Widget $widget) use (&$restoredWidgets, &$restoredChats) {
+                $widget->restore();
+                $restoredWidgets[] = $widget->id;
+
+                if ($widget->type === 'chat' && $widget->chatSession && $widget->chatSession->trashed()) {
+                    $widget->chatSession->restore();
+                    $restoredChats[] = $widget->chatSession->id;
+                }
+            });
+
+        $workspace->chatSessions()
+            ->onlyTrashed()
+            ->get()
+            ->each(function (ChatSession $chat) use (&$restoredChats) {
+                $chat->restore();
+                $restoredChats[] = $chat->id;
+            });
+
+        return [
+            'topics' => [],
+            'workspaces' => [$workspace->id],
+            'widgets' => array_values(array_unique($restoredWidgets)),
+            'chats' => array_values(array_unique($restoredChats)),
+        ];
     }
 }

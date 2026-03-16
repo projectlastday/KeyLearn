@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Workspace;
+use App\Support\WidgetData;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -13,6 +14,20 @@ class WorkspaceController extends Controller
     public function index(Request $request): Response
     {
         $user = $request->user();
+        $requestedWorkspaceId = (int) $request->query('workspace');
+
+        if ($requestedWorkspaceId > 0) {
+            $openedWorkspace = $user->workspaces()
+                ->where('id', $requestedWorkspaceId)
+                ->first();
+
+            if ($openedWorkspace) {
+                $openedWorkspace->update(['last_opened_at' => now()]);
+                $openedWorkspace->openEvents()->create([
+                    'opened_at' => now(),
+                ]);
+            }
+        }
 
         $topics = $user->topics()->orderBy('name')->get();
 
@@ -23,7 +38,7 @@ class WorkspaceController extends Controller
                     $query->orderBy('updated_at', 'desc')->limit(20);
                 },
                 'widgets' => function ($query) {
-                    $query->with(['note', 'chatSession'])->orderBy('sort_order');
+                    $query->with(['note', 'youtube', 'pdf', 'whiteboard', 'chatSession', 'reminders', 'todoStatuses', 'todoItems.status', 'timer'])->orderBy('sort_order');
                 },
             ])
             ->orderBy('updated_at', 'desc')
@@ -41,28 +56,7 @@ class WorkspaceController extends Controller
                             'updated_at' => $chat->updated_at->toISOString(),
                         ];
                     })->toArray(),
-                    'widgets' => $workspace->widgets->map(function ($widget) {
-                        return [
-                            'id' => $widget->id,
-                            'type' => $widget->type,
-                            'title' => $widget->title,
-                            'size_preset' => $widget->size_preset,
-                            'grid_x' => $widget->grid_x,
-                            'grid_y' => $widget->grid_y,
-                            'grid_w' => $widget->grid_w,
-                            'grid_h' => $widget->grid_h,
-                            'sort_order' => $widget->sort_order,
-                            'chat_session_id' => $widget->chat_session_id,
-                            'chat' => $widget->chatSession ? [
-                                'id' => $widget->chatSession->id,
-                                'updated_at' => $widget->chatSession->updated_at?->toISOString(),
-                            ] : null,
-                            'note' => $widget->note ? [
-                                'id' => $widget->note->id,
-                                'content' => $widget->note->content,
-                            ] : null,
-                        ];
-                    })->toArray(),
+                    'widgets' => $workspace->widgets->map(fn ($widget) => WidgetData::widget($widget))->toArray(),
                 ];
             });
 
@@ -74,6 +68,21 @@ class WorkspaceController extends Controller
             'initialTopics' => $topicNames,
             'initialTopicMap' => $topicMap,
         ]);
+    }
+
+    public function open(Request $request, Workspace $workspace): JsonResponse
+    {
+        abort_unless($workspace->user_id === $request->user()->id, 403);
+
+        $workspace->update([
+            'last_opened_at' => now(),
+        ]);
+
+        $workspace->openEvents()->create([
+            'opened_at' => now(),
+        ]);
+
+        return response()->json(null, 204);
     }
 
     public function store(Request $request): JsonResponse
